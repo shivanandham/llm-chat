@@ -1,0 +1,237 @@
+"""
+Registry of free LLM API providers and their models.
+
+Almost every usable free LLM API in 2026 speaks the OpenAI Chat Completions
+protocol (``POST {base_url}/chat/completions`` with a Bearer key), so we model
+every provider the same way: a base URL, the env var that holds its key, and a
+list of models with a quality score. The router (``app/router.py``) flattens all
+models into one priority-ordered list and walks it, skipping providers that have
+no key or are temporarily rate-limited.
+
+To add a provider: append a ``Provider`` below. To change which model is
+preferred: tweak the ``quality`` numbers. No other code needs to change.
+
+Quality scale (rough, free-tier-relevant):
+    100  frontier (Gemini 2.5 Pro, DeepSeek R1/V3, Llama 405B)
+     85  strong  (Llama 3.3 70B, Qwen 72B, Mistral Large, Gemini 2.5 Flash)
+     60  small   (Llama 3.1 8B, Mistral small, Gemini Flash-Lite)
+     40  tiny    (Llama 3.2 3B and friends)
+
+``speed`` is a tiebreaker between equal-quality routes (higher = faster
+inference hardware). Cerebras/Groq win here.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass(frozen=True)
+class Model:
+    """A single model offered by a provider."""
+
+    id: str          # the model id sent to the API
+    quality: int     # see scale above
+    label: str = ""  # human-friendly name for /providers
+
+
+@dataclass
+class Provider:
+    """A free, OpenAI-compatible LLM API provider."""
+
+    name: str
+    base_url: str
+    api_key_env: str
+    models: list[Model]
+    speed: int = 50                 # tiebreaker for equal-quality models
+    default_cooldown: float = 60.0  # seconds to rest a provider after a 429
+    # Optional second env var some providers need woven into the base_url
+    # (e.g. Cloudflare account id). Rendered with str.format(**os.environ).
+    requires_env: tuple[str, ...] = field(default_factory=tuple)
+    docs: str = ""
+
+    @property
+    def api_key(self) -> Optional[str]:
+        return os.environ.get(self.api_key_env)
+
+    @property
+    def resolved_base_url(self) -> Optional[str]:
+        """base_url with any ``{ENV_VAR}`` placeholders filled in, or None if
+        a required env var is missing."""
+        try:
+            return self.base_url.format(**os.environ)
+        except KeyError:
+            return None
+
+    @property
+    def enabled(self) -> bool:
+        """True when every credential this provider needs is present."""
+        if not self.api_key:
+            return False
+        if self.resolved_base_url is None:
+            return False
+        return all(os.environ.get(var) for var in self.requires_env)
+
+
+# ---------------------------------------------------------------------------
+# The registry. All of these have a genuine, no-credit-card free tier in 2026.
+# ---------------------------------------------------------------------------
+PROVIDERS: list[Provider] = [
+    Provider(
+        name="gemini",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key_env="GEMINI_API_KEY",
+        speed=70,
+        docs="https://aistudio.google.com/apikey",
+        models=[
+            Model("gemini-2.5-pro", 100, "Gemini 2.5 Pro"),
+            Model("gemini-2.5-flash", 85, "Gemini 2.5 Flash"),
+            Model("gemini-2.5-flash-lite", 60, "Gemini 2.5 Flash-Lite"),
+        ],
+    ),
+    Provider(
+        name="cerebras",
+        base_url="https://api.cerebras.ai/v1",
+        api_key_env="CEREBRAS_API_KEY",
+        speed=100,  # fastest inference available on a free tier (~2000 tok/s)
+        docs="https://cloud.cerebras.ai",
+        models=[
+            Model("llama-3.3-70b", 85, "Llama 3.3 70B (Cerebras)"),
+            Model("qwen-3-32b", 80, "Qwen 3 32B (Cerebras)"),
+            Model("llama-3.1-8b", 60, "Llama 3.1 8B (Cerebras)"),
+        ],
+    ),
+    Provider(
+        name="groq",
+        base_url="https://api.groq.com/openai/v1",
+        api_key_env="GROQ_API_KEY",
+        speed=95,  # very fast (~300+ tok/s)
+        docs="https://console.groq.com/keys",
+        models=[
+            Model("llama-3.3-70b-versatile", 85, "Llama 3.3 70B (Groq)"),
+            Model("openai/gpt-oss-120b", 88, "GPT-OSS 120B (Groq)"),
+            Model("llama-3.1-8b-instant", 60, "Llama 3.1 8B (Groq)"),
+        ],
+    ),
+    Provider(
+        name="sambanova",
+        base_url="https://api.sambanova.ai/v1",
+        api_key_env="SAMBANOVA_API_KEY",
+        speed=85,
+        docs="https://cloud.sambanova.ai/apis",
+        models=[
+            Model("DeepSeek-R1", 95, "DeepSeek R1 (SambaNova)"),
+            Model("Meta-Llama-3.3-70B-Instruct", 85, "Llama 3.3 70B (SambaNova)"),
+            Model("Meta-Llama-3.1-8B-Instruct", 60, "Llama 3.1 8B (SambaNova)"),
+        ],
+    ),
+    Provider(
+        name="nvidia",
+        base_url="https://integrate.api.nvidia.com/v1",
+        api_key_env="NVIDIA_API_KEY",
+        speed=60,
+        docs="https://build.nvidia.com",
+        models=[
+            Model("deepseek-ai/deepseek-r1", 95, "DeepSeek R1 (NVIDIA)"),
+            Model("meta/llama-3.3-70b-instruct", 85, "Llama 3.3 70B (NVIDIA)"),
+            Model("meta/llama-3.1-8b-instruct", 60, "Llama 3.1 8B (NVIDIA)"),
+        ],
+    ),
+    Provider(
+        name="mistral",
+        base_url="https://api.mistral.ai/v1",
+        api_key_env="MISTRAL_API_KEY",
+        speed=65,
+        docs="https://console.mistral.ai/api-keys",
+        models=[
+            Model("mistral-large-latest", 85, "Mistral Large"),
+            Model("mistral-small-latest", 60, "Mistral Small"),
+        ],
+    ),
+    Provider(
+        name="openrouter",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY",
+        speed=55,
+        docs="https://openrouter.ai/keys",
+        models=[
+            # ``:free`` variants are permanently free on OpenRouter.
+            Model("deepseek/deepseek-r1:free", 95, "DeepSeek R1 (OpenRouter)"),
+            Model("meta-llama/llama-3.3-70b-instruct:free", 85, "Llama 3.3 70B (OpenRouter)"),
+            Model("mistralai/mistral-small-3.2-24b-instruct:free", 60, "Mistral Small (OpenRouter)"),
+        ],
+    ),
+    Provider(
+        name="github",
+        base_url="https://models.github.ai/inference",
+        api_key_env="GITHUB_MODELS_TOKEN",
+        speed=55,
+        docs="https://github.com/marketplace/models",
+        models=[
+            Model("openai/gpt-4.1", 90, "GPT-4.1 (GitHub Models)"),
+            Model("meta/Llama-3.3-70B-Instruct", 85, "Llama 3.3 70B (GitHub Models)"),
+            Model("openai/gpt-4.1-mini", 70, "GPT-4.1 mini (GitHub Models)"),
+        ],
+    ),
+    Provider(
+        name="cohere",
+        base_url="https://api.cohere.ai/compatibility/v1",
+        api_key_env="COHERE_API_KEY",
+        speed=55,
+        docs="https://dashboard.cohere.com/api-keys",
+        models=[
+            Model("command-a-03-2025", 80, "Command A (Cohere)"),
+            Model("command-r-plus", 70, "Command R+ (Cohere)"),
+        ],
+    ),
+    Provider(
+        name="cloudflare",
+        base_url="https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+        api_key_env="CLOUDFLARE_API_TOKEN",
+        requires_env=("CLOUDFLARE_ACCOUNT_ID",),
+        speed=60,
+        docs="https://dash.cloudflare.com/?to=/:account/ai/workers-ai",
+        models=[
+            Model("@cf/meta/llama-3.3-70b-instruct-fp8-fast", 85, "Llama 3.3 70B (Cloudflare)"),
+            Model("@cf/meta/llama-3.1-8b-instruct", 60, "Llama 3.1 8B (Cloudflare)"),
+        ],
+    ),
+]
+
+
+PROVIDERS_BY_NAME: dict[str, Provider] = {p.name: p for p in PROVIDERS}
+
+
+@dataclass(frozen=True)
+class Route:
+    """A (provider, model) pair — one attemptable destination for a request."""
+
+    provider: Provider
+    model: Model
+
+    @property
+    def id(self) -> str:
+        return f"{self.provider.name}/{self.model.id}"
+
+    # Sort key: best quality first, then fastest hardware, for a stable order.
+    @property
+    def sort_key(self) -> tuple[int, int]:
+        return (-self.model.quality, -self.provider.speed)
+
+
+def all_routes() -> list[Route]:
+    """Every (provider, model) route, priority-ordered (best first)."""
+    routes = [
+        Route(provider, model)
+        for provider in PROVIDERS
+        for model in provider.models
+    ]
+    routes.sort(key=lambda r: r.sort_key)
+    return routes
+
+
+def enabled_routes() -> list[Route]:
+    """Priority-ordered routes whose provider has all required credentials."""
+    return [r for r in all_routes() if r.provider.enabled]
