@@ -19,12 +19,20 @@ plus an OpenAI-compatible API and a tiny browser chat UI.
 
 ## Why it works this way
 
-Almost every usable free LLM API in 2026 (Google Gemini, Groq, Cerebras,
-SambaNova, NVIDIA NIM, Mistral, OpenRouter, GitHub Models, Cohere, Cloudflare)
-speaks the **OpenAI Chat Completions protocol**. So each provider is just a
-`base_url` + key + model list. The router flattens every model into one
-priority-ordered list (best quality first, fastest hardware as tiebreaker) and
+Almost every usable free LLM API in 2026 (Groq, Cerebras, OpenRouter, GitHub
+Models, Cloudflare, Mistral, SambaNova — plus prepaid/trial ones like Gemini,
+NVIDIA NIM, Cohere) speaks the **OpenAI Chat Completions protocol**. So each
+provider is just a `base_url` + key + model list. The router flattens every
+model into one priority-ordered list (best quality first, then **truly-free
+providers ahead of trial/prepaid ones**, fastest hardware as tiebreaker) and
 walks it until one succeeds.
+
+> **Not all "free" is equal (verified June 2026).** Only some providers are
+> *permanently* free with no card and no expiry. Notably **Google Gemini now
+> requires prepaid billing for new accounts** and NVIDIA NIM's credits expire.
+> The gateway marks each provider's `permanent_free` flag (see `GET /providers`)
+> and prefers the truly-free ones. Full breakdown in
+> [docs/GET_API_KEYS.md](docs/GET_API_KEYS.md).
 
 ## Quick start
 

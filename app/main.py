@@ -74,6 +74,8 @@ def providers() -> list[ProviderStatus]:
             ProviderStatus(
                 name=p.name,
                 enabled=p.enabled,
+                permanent_free=p.permanent_free,
+                free_note=p.free_note,
                 models=[m.id for m in p.models],
                 cooldown_seconds_left=state.cooldown_left(now),
                 disabled_reason=state.disabled_reason

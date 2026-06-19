@@ -73,6 +73,8 @@ class OpenAIChatRequest(BaseModel):
 class ProviderStatus(BaseModel):
     name: str
     enabled: bool
+    permanent_free: bool
+    free_note: str
     models: list[str]
     cooldown_seconds_left: int
     disabled_reason: Optional[str] = None

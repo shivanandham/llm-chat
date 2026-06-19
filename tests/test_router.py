@@ -3,7 +3,8 @@ Failover tests for the Router — no real API keys or network needed.
 
 We enable a couple of providers via env vars, then swap their OpenAI clients for
 fakes that raise/return what we want, and assert the router walks the priority
-list and fails over correctly.
+list and fails over correctly. Expected ordering is derived from the registry
+(``enabled_routes``) so these tests stay valid if quality scores are tweaked.
 """
 
 import time
@@ -12,8 +13,8 @@ import httpx
 import openai
 import pytest
 
-import app.router as router_mod
-from app.providers import PROVIDERS_BY_NAME
+import app.router as router_mod  # noqa: F401 (kept for parity / future use)
+from app.providers import PROVIDERS_BY_NAME, enabled_routes
 from app.router import AllProvidersExhausted, Router
 
 
@@ -38,7 +39,6 @@ class FakeClient:
     """Stands in for AsyncOpenAI. `behavior(model)` returns content or raises."""
 
     def __init__(self, behavior):
-        self._behavior = behavior
         outer = self
 
         class _Completions:
@@ -48,6 +48,7 @@ class FakeClient:
         class _Chat:
             completions = _Completions()
 
+        self._behavior = behavior
         self.chat = _Chat()
 
 
@@ -59,11 +60,20 @@ def _rate_limit_error():
 
 @pytest.fixture
 def two_providers(monkeypatch):
-    """Enable exactly gemini (quality 100) and groq, give known API keys."""
-    for name in PROVIDERS_BY_NAME:
-        monkeypatch.delenv(PROVIDERS_BY_NAME[name].api_key_env, raising=False)
-    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
+    """Enable exactly groq and gemini, with known API keys."""
+    for p in PROVIDERS_BY_NAME.values():
+        monkeypatch.delenv(p.api_key_env, raising=False)
     monkeypatch.setenv("GROQ_API_KEY", "test-groq")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
+
+
+def provider_order() -> list[str]:
+    """Distinct provider names in the order the router will try them."""
+    seen: list[str] = []
+    for r in enabled_routes():
+        if r.provider.name not in seen:
+            seen.append(r.provider.name)
+    return seen
 
 
 def _wire(router: Router, behaviors: dict):
@@ -72,72 +82,71 @@ def _wire(router: Router, behaviors: dict):
     router._client = lambda provider: clients[provider.name]  # type: ignore
 
 
+def _ok(name):
+    return lambda model: _Resp(f"hi from {name}")
+
+
 # --- tests -----------------------------------------------------------------
+def test_permanent_free_preferred_over_trial(two_providers):
+    """Among the two, the permanent-free provider (groq) must outrank the
+    prepaid/trial one (gemini)."""
+    order = provider_order()
+    assert order[0] == "groq"
+    assert "gemini" in order  # present, just lower priority
+
+
 @pytest.mark.asyncio
 async def test_picks_best_provider_first(two_providers):
     r = Router()
-    _wire(r, {
-        "gemini": lambda m: _Resp("hi from gemini"),
-        "groq": lambda m: _Resp("hi from groq"),
-    })
+    top, second = provider_order()[:2]
+    _wire(r, {top: _ok(top), second: _ok(second)})
     out = await r.complete([{"role": "user", "content": "hello"}])
-    # Gemini 2.5 Pro has the highest quality score, so it must be tried first.
-    assert out.provider == "gemini"
-    assert out.content == "hi from gemini"
-    assert out.attempts[0].startswith("gemini/")
+    assert out.provider == top
+    assert out.attempts[0].startswith(top + "/")
 
 
 @pytest.mark.asyncio
 async def test_fails_over_on_rate_limit(two_providers):
     r = Router()
+    top, second = provider_order()[:2]
 
-    def gemini_behavior(model):
+    def boom(model):
         raise _rate_limit_error()
 
-    _wire(r, {
-        "gemini": gemini_behavior,
-        "groq": lambda m: _Resp("groq saves the day"),
-    })
+    _wire(r, {top: boom, second: _ok(second)})
     out = await r.complete([{"role": "user", "content": "hello"}])
-    assert out.provider == "groq"
-    assert out.content == "groq saves the day"
-    # Gemini should now be cooling down (retry-after: 30).
-    gemini = PROVIDERS_BY_NAME["gemini"]
-    assert r.state(gemini).cooldown_left(time.time()) > 0
-    assert any(a.startswith("gemini/") for a in out.attempts)
+    assert out.provider == second
+    # The top provider should now be cooling down (retry-after: 30).
+    assert r.state(PROVIDERS_BY_NAME[top]).cooldown_left(time.time()) > 0
+    assert any(a.startswith(top + "/") for a in out.attempts)
 
 
 @pytest.mark.asyncio
 async def test_cooldown_skips_provider(two_providers):
     r = Router()
-    gemini = PROVIDERS_BY_NAME["gemini"]
-    r.state(gemini).cooldown_until = time.time() + 999  # force cooldown
-    _wire(r, {
-        "gemini": lambda m: _Resp("should be skipped"),
-        "groq": lambda m: _Resp("groq used"),
-    })
+    top, second = provider_order()[:2]
+    r.state(PROVIDERS_BY_NAME[top]).cooldown_until = time.time() + 999
+    _wire(r, {top: _ok(top), second: _ok(second)})
     out = await r.complete([{"role": "user", "content": "hi"}])
-    assert out.provider == "groq"
-    assert not any(a.startswith("gemini/") for a in out.attempts)
+    assert out.provider == second
+    assert not any(a.startswith(top + "/") for a in out.attempts)
 
 
 @pytest.mark.asyncio
 async def test_auth_error_disables_provider(two_providers):
     r = Router()
+    top, second = provider_order()[:2]
     req = httpx.Request("POST", "https://example/chat/completions")
     auth_err = openai.AuthenticationError(
         "bad key", response=httpx.Response(401, request=req), body=None
     )
 
-    def gemini_behavior(model):
+    def boom(model):
         raise auth_err
 
-    _wire(r, {
-        "gemini": gemini_behavior,
-        "groq": lambda m: _Resp("ok"),
-    })
+    _wire(r, {top: boom, second: _ok(second)})
     await r.complete([{"role": "user", "content": "hi"}])
-    assert r.state(PROVIDERS_BY_NAME["gemini"]).disabled_reason is not None
+    assert r.state(PROVIDERS_BY_NAME[top]).disabled_reason is not None
 
 
 @pytest.mark.asyncio
@@ -147,7 +156,7 @@ async def test_all_exhausted_raises(two_providers):
     def boom(model):
         raise _rate_limit_error()
 
-    _wire(r, {"gemini": boom, "groq": boom})
+    _wire(r, {name: boom for name in provider_order()})
     with pytest.raises(AllProvidersExhausted) as exc:
         await r.complete([{"role": "user", "content": "hi"}])
     assert len(exc.value.attempts) >= 2
@@ -156,6 +165,7 @@ async def test_all_exhausted_raises(two_providers):
 @pytest.mark.asyncio
 async def test_pin_specific_model(two_providers):
     r = Router()
+    # A groq-only model id, so routing must land on groq regardless of order.
     _wire(r, {
         "gemini": lambda m: _Resp("gemini"),
         "groq": lambda m: _Resp(f"groq:{m}"),
@@ -167,13 +177,12 @@ async def test_pin_specific_model(two_providers):
     assert out.model == "llama-3.1-8b-instant"
 
 
+# --- streaming -------------------------------------------------------------
 class FakeStreamClient:
     """Stands in for AsyncOpenAI when stream=True: create() returns an async
     iterator of chunk objects, or raises before iteration starts."""
 
     def __init__(self, deltas=None, raises=None):
-        outer = self
-
         class _Delta:
             def __init__(self, content):
                 self.content = content
@@ -212,18 +221,18 @@ class FakeStreamClient:
 @pytest.mark.asyncio
 async def test_stream_fails_over_then_streams(two_providers):
     r = Router()
+    top, second = provider_order()[:2]
     clients = {
-        "gemini": FakeStreamClient(raises=_rate_limit_error()),
-        "groq": FakeStreamClient(deltas=["Hel", "lo", "!"]),
+        top: FakeStreamClient(raises=_rate_limit_error()),
+        second: FakeStreamClient(deltas=["Hel", "lo", "!"]),
     }
     r._client = lambda provider: clients[provider.name]  # type: ignore
 
-    chunks = []
-    chosen = None
+    chunks, chosen = [], None
     async for route, delta in r.stream([{"role": "user", "content": "hi"}]):
         chosen = route
         chunks.append(delta)
-    assert chosen.provider.name == "groq"
+    assert chosen.provider.name == second
     assert "".join(chunks) == "Hello!"
 
 

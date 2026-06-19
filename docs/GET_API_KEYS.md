@@ -4,142 +4,154 @@ This gateway works with any number of providers — **even one key is enough to
 start**. Add more to get more total free capacity and longer uptime before
 everything is rate-limited at once.
 
-All providers below have a **genuine free tier in 2026** and (with the
-exception noted) require **no credit card**. Every one speaks the OpenAI Chat
-Completions protocol, which is why the gateway can treat them uniformly.
+> **Read this first — "free" has fine print (verified June 2026).**
+> The market shifted in 2026. Some providers that used to be the obvious pick
+> now want money up front. The biggest change: **Google Gemini** now requires
+> **prepaid billing for new Google AI Studio accounts** (since ~March 2026) and
+> moved its Pro models to paid in April — so for a fresh account it is *not*
+> truly free anymore. The list below is split into what is **permanently free
+> (no card, no expiry)** vs. **trial / prepaid / restricted**.
+
+The gateway encodes this: permanent-free providers are tried first, and
+`GET /providers` shows each provider's `permanent_free` flag and a `free_note`.
 
 After you collect keys, put them in a `.env` file in the repo root (copy
-`.env.example`). The env var name for each provider is listed below and in
-`app/providers.py`.
+`.env.example`).
 
 ---
 
-## Quick-start: the 3 highest-value keys
+## ✅ Truly free — no credit card, no expiry (use these)
 
-If you only do three, do these — they cover quality, speed, and breadth:
+Start here. Even one of these keeps the gateway running for free indefinitely.
 
-| Provider | Why | Free tier (approx, 2026) | Card? |
+| Provider | Env var | Free tier (approx, 2026) | Caveat |
 |---|---|---|---|
-| **Google Gemini** | Best free-tier quality (Gemini 2.5 Pro/Flash), huge context | ~1,000–1,500 req/day, up to 1M-token context | No |
-| **Groq** | Extremely fast (~300+ tok/s), Llama 3.3 70B | ~30 req/min, generous daily token budget | No |
-| **Cerebras** | Fastest inference anywhere (~2,000 tok/s) | Free dev tier, per-minute + daily caps | No |
+| **Groq** | `GROQ_API_KEY` | ~14,400 req/day, 30k tok/min/model; very fast | — |
+| **Cerebras** | `CEREBRAS_API_KEY` | ~1,000,000 tokens/day; fastest inference | 8k-token context cap on free tier |
+| **OpenRouter** | `OPENROUTER_API_KEY` | many `:free` models; ~50 req/day | rises to 1,000/day only after a one-time $10 top-up |
+| **GitHub Models** | `GITHUB_MODELS_TOKEN` | free for any GitHub account | per-minute/day caps |
+| **Cloudflare Workers AI** | `CLOUDFLARE_API_TOKEN` (+ `CLOUDFLARE_ACCOUNT_ID`) | ~10,000 neurons/day | needs your account id too |
+| **Mistral** | `MISTRAL_API_KEY` | ~1B tokens/month ("Experiment") | **must opt into data-training** to use the free tier |
+| **SambaNova** | `SAMBANOVA_API_KEY` | permanent ~20 RPM / 200k tok/day | also grants $5 bonus credits that *do* expire |
+
+### Recommended minimum: **Groq + Cerebras**
+Both are no-card, permanent, and fast, and between them you get Llama 3.3 70B,
+GPT-OSS 120B, and Qwen — enough to run the whole app for free with comfortable
+daily limits. Add OpenRouter and GitHub Models next for breadth (DeepSeek R1,
+GPT-4.1).
 
 ---
 
-## Provider-by-provider
+## ⚠️ Trial / prepaid / restricted — not "free forever"
 
-### 1. Google Gemini (Google AI Studio) — `GEMINI_API_KEY`
-1. Go to <https://aistudio.google.com/apikey>.
-2. Sign in with a Google account.
-3. Click **Create API key** → copy it.
-4. Set `GEMINI_API_KEY=...` in `.env`.
-- **Free tier:** ~5–15 RPM and ~100–1,000 requests/day depending on model
-  (Pro is the tightest, Flash-Lite the loosest), up to 1M-token context. No card.
+Kept in the registry so you can use them *if* you have credits or an existing
+account, but they're deprioritized and flagged. Don't rely on them as your base.
 
-### 2. Cerebras — `CEREBRAS_API_KEY`
-1. Go to <https://cloud.cerebras.ai> and sign up (Google/GitHub/email).
-2. Open **API Keys** → **Create API Key** → copy.
-3. Set `CEREBRAS_API_KEY=...`.
-- **Free tier:** free developer tier with per-minute and daily request/token
-  caps; the fastest tokens/sec you can get for free. No card.
+| Provider | Env var | Why it's flagged |
+|---|---|---|
+| **Google Gemini** | `GEMINI_API_KEY` | **New AI Studio accounts now require prepaid billing**; Pro is paid. Only *existing* accounts still get Gemini Flash on the free tier. |
+| **NVIDIA NIM** | `NVIDIA_API_KEY` | Trial credits that **expire** (~5,000 credits / ~30 days), not a standing free tier. |
+| **Cohere** | `COHERE_API_KEY` | Trial key (1,000 calls/mo, resets) but **not permitted for production/commercial use**. |
 
-### 3. Groq — `GROQ_API_KEY`
-1. Go to <https://console.groq.com/keys>.
-2. Sign in → **Create API Key** → copy (shown once).
+If you already have a Gemini key on an older free account, set `GEMINI_API_KEY`
+and it'll be used — just not preferred over the permanent-free providers.
+
+---
+
+## Step-by-step: getting each key
+
+### Groq — `GROQ_API_KEY`  *(✅ truly free)*
+1. Go to <https://console.groq.com/keys> and sign in.
+2. **Create API Key** → copy (shown once).
 3. Set `GROQ_API_KEY=...`.
-- **Free tier:** ~30 requests/min and a daily token budget per model. No card.
 
-### 4. SambaNova — `SAMBANOVA_API_KEY`
-1. Go to <https://cloud.sambanova.ai> and sign up.
-2. Open **APIs** / **API Keys** → generate a key → copy.
-3. Set `SAMBANOVA_API_KEY=...`.
-- **Free tier:** free developer access to DeepSeek R1 and Llama models with
-  rate limits. No card.
+### Cerebras — `CEREBRAS_API_KEY`  *(✅ truly free)*
+1. Sign up at <https://cloud.cerebras.ai> (Google/GitHub/email).
+2. **API Keys → Create API Key** → copy.
+3. Set `CEREBRAS_API_KEY=...`.
 
-### 5. NVIDIA NIM (build.nvidia.com) — `NVIDIA_API_KEY`
-1. Go to <https://build.nvidia.com> and sign in (free NVIDIA developer account).
-2. Pick any model → **Get API Key** / **Generate Key** → copy (starts `nvapi-`).
-3. Set `NVIDIA_API_KEY=...`.
-- **Free tier:** ~1,000 free credits on signup; OpenAI-compatible endpoint. No card.
+### OpenRouter — `OPENROUTER_API_KEY`  *(✅ truly free)*
+1. Go to <https://openrouter.ai/keys>, sign in (Google/GitHub).
+2. **Create Key** → copy (starts `sk-or-`).
+3. Set `OPENROUTER_API_KEY=...`. Use the `:free` models (already configured).
 
-### 6. Mistral (La Plateforme) — `MISTRAL_API_KEY`
-1. Go to <https://console.mistral.ai/api-keys>.
-2. Sign up and complete account setup.
-3. **Create new key** → copy.
-4. Set `MISTRAL_API_KEY=...`.
-- **Free tier:** the "Experiment" free plan with rate limits. May ask for phone
-  verification.
-
-### 7. OpenRouter — `OPENROUTER_API_KEY`
-1. Go to <https://openrouter.ai/keys>.
-2. Sign in (Google/GitHub) → **Create Key** → copy (starts `sk-or-`).
-3. Set `OPENROUTER_API_KEY=...`.
-- **Free tier:** many models with a `:free` suffix are permanently free behind a
-  single key (rate-limited per day). No card for the free models.
-
-### 8. GitHub Models — `GITHUB_MODELS_TOKEN`
-1. Go to <https://github.com/settings/tokens> → **Fine-grained tokens** →
+### GitHub Models — `GITHUB_MODELS_TOKEN`  *(✅ truly free)*
+1. <https://github.com/settings/tokens> → **Fine-grained tokens** →
    **Generate new token**.
-2. Under **Permissions → Account permissions**, grant **Models: Read-only**.
-3. Generate and copy the token (starts `github_pat_`).
+2. Under **Account permissions**, grant **Models: Read-only**.
+3. Generate → copy (starts `github_pat_`).
 4. Set `GITHUB_MODELS_TOKEN=...`.
-- **Free tier:** free for any GitHub account, with per-minute/day request caps.
-  Browse models at <https://github.com/marketplace/models>.
 
-### 9. Cohere — `COHERE_API_KEY`
-1. Go to <https://dashboard.cohere.com/api-keys>.
-2. Sign up → copy the **Trial key** (already created for you).
-3. Set `COHERE_API_KEY=...`.
-- **Free tier:** trial keys are rate-limited (good for low-volume use). No card.
-
-### 10. Cloudflare Workers AI — `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
-This is the one provider that needs **two** values.
+### Cloudflare Workers AI — `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`  *(✅ truly free)*
 1. Sign in at <https://dash.cloudflare.com>.
-2. Your **Account ID** is in the URL and on the account/Workers&Pages overview —
-   copy it into `CLOUDFLARE_ACCOUNT_ID`.
-3. Go to **My Profile → API Tokens → Create Token**, use the **Workers AI**
-   template (or a custom token with the *Workers AI: Read* permission) → copy.
+2. Copy your **Account ID** (in the URL / Workers & Pages overview) →
+   `CLOUDFLARE_ACCOUNT_ID`.
+3. **My Profile → API Tokens → Create Token** → use the **Workers AI** template
+   (or a custom token with *Workers AI: Read*) → copy.
 4. Set `CLOUDFLARE_API_TOKEN=...` and `CLOUDFLARE_ACCOUNT_ID=...`.
-- **Free tier:** ~10,000 "neurons"/day of inference. No card.
+
+### Mistral — `MISTRAL_API_KEY`  *(✅ truly free, with a condition)*
+1. Go to <https://console.mistral.ai/api-keys> and sign up.
+2. Opt into the free **Experiment** plan (this **allows Mistral to train on your
+   data** — required for the free tier).
+3. **Create new key** → copy. Set `MISTRAL_API_KEY=...`.
+
+### SambaNova — `SAMBANOVA_API_KEY`  *(✅ truly free base tier)*
+1. Sign up at <https://cloud.sambanova.ai>.
+2. **APIs / API Keys** → generate → copy.
+3. Set `SAMBANOVA_API_KEY=...`.
+
+### Google Gemini — `GEMINI_API_KEY`  *(⚠️ prepaid for new accounts)*
+1. <https://aistudio.google.com/apikey> → **Create API key**.
+2. New accounts are now prompted to set up **prepaid billing** (buy credits
+   first). If you're fine with that, or you have an older free account, copy the
+   key and set `GEMINI_API_KEY=...`. Otherwise skip it — the truly-free
+   providers above cover you.
+
+### NVIDIA NIM — `NVIDIA_API_KEY`  *(⚠️ expiring trial credits)*
+1. <https://build.nvidia.com> → sign in → pick a model → **Get API Key**
+   (starts `nvapi-`). 2. Set `NVIDIA_API_KEY=...`. Note the credits expire.
+
+### Cohere — `COHERE_API_KEY`  *(⚠️ non-commercial trial)*
+1. <https://dashboard.cohere.com/api-keys> → copy the **Trial key**.
+2. Set `COHERE_API_KEY=...`. Personal/eval use only.
 
 ---
 
 ## After you have keys
 
 ```bash
-cp .env.example .env      # then paste your keys in
+cp .env.example .env      # paste your keys in
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Open <http://localhost:8000> to chat, or check which providers came online:
+Open <http://localhost:8000> to chat, or check what came online and whether each
+is permanent-free:
 
 ```bash
-curl http://localhost:8000/providers
+curl -s http://localhost:8000/providers | python3 -m json.tool
 ```
 
-Any provider whose key is missing simply shows `enabled: false` and is skipped —
-no errors. Add keys over time; the gateway picks them up on restart.
+Any provider whose key is missing simply shows `enabled: false` and is skipped.
 
----
+## Tips
 
-## Tips for maximizing free usage
-
-- **Add as many providers as you can.** The gateway always tries the best model
-  first and only falls back when one is rate-limited, so extra keys = more
-  headroom, not more cost.
-- **Keys are secrets.** `.env` is gitignored — never commit it. For deployment,
-  set the variables in your host's secret manager instead of a file.
-- **Some "free trials" expire or need a card** (e.g. paid clouds). Everything in
-  this list is a standing free tier, not a trial, unless noted.
-- **Respect the terms.** Free tiers are for development and personal use; check
-  each provider's usage policy before anything production-facing.
+- **Add several permanent-free keys.** The gateway tries the best model first
+  and falls back only when one is rate-limited, so more keys = more headroom.
+- **Keys are secrets.** `.env` is gitignored — never commit it. In production,
+  use your host's secret manager.
+- **Respect each provider's terms** (e.g. Cohere trial = non-commercial,
+  Mistral free = data-training opt-in).
 
 ## Sources
 
-- [OpenRouter — Free LLM APIs in 2026, ranked & compared](https://openrouter.ai/blog/tutorials/free-llm-apis-compared/)
-- [Analytics Vidhya — 15 Free LLM APIs (2026)](https://www.analyticsvidhya.com/blog/2026/01/top-free-llm-apis/)
-- [TokenMix — Free LLM API 2026: limits & no-card picks](https://tokenmix.ai/blog/free-llm-api)
-- [We The Flywheel — Best Free LLM API Tiers in 2026](https://wetheflywheel.com/en/ai-model-access/free-llm-api-tiers-2026/)
-- [NVIDIA NIM Free API — rate limits & keys](https://decodethefuture.org/en/nvidia-nim-api-explained/)
-- [awesome-free-llm-apis (GitHub)](https://github.com/amardeeplakshkar/awesome-free-llm-apis)
+- [Gemini free tier tightened — Pro paid from April 2026](https://help.apiyi.com/en/google-gemini-api-free-tier-changes-april-2026-guide-en.html)
+- [Gemini free tier: new accounts may require prepaid billing](https://www.aifreeapi.com/en/posts/google-gemini-api-free-tier)
+- [Ian Paterson — What Groq, Cerebras, Mistral, Gemini, Cohere actually give you (2026)](https://ianlpaterson.com/blog/free-llm-api-2026/)
+- [Cerebras now has a real free tier (1M tokens/day)](https://tokenmix.ai/blog/cerebras-api-key-rate-limits-free-tier-2026)
+- [Groq free tier — no credit card](https://www.getaiperks.com/en/ai/groq-free-tier-2026)
+- [OpenRouter free models & limits](https://openrouter.ai/blog/tutorials/free-llm-apis-compared/)
+- [awesome-free-llm-apis — permanent free list](https://github.com/mnfst/awesome-free-llm-apis)
+- [NVIDIA NIM credits expire (developer forum)](https://forums.developer.nvidia.com/t/your-free-nvidia-api-credits-expire-in-2-days/318141)
+- [Cohere trial key limits (non-commercial)](https://codenote.net/en/posts/cohere-trial-api-key-pricing-and-limits/)

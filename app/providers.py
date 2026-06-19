@@ -51,6 +51,10 @@ class Provider:
     # (e.g. Cloudflare account id). Rendered with str.format(**os.environ).
     requires_env: tuple[str, ...] = field(default_factory=tuple)
     docs: str = ""
+    # True only for standing free tiers (no card, no expiry). False for
+    # trial-credit or prepaid-billing providers — see `free_note`.
+    permanent_free: bool = True
+    free_note: str = ""
 
     @property
     def api_key(self) -> Optional[str]:
@@ -79,16 +83,18 @@ class Provider:
 # The registry. All of these have a genuine, no-credit-card free tier in 2026.
 # ---------------------------------------------------------------------------
 PROVIDERS: list[Provider] = [
+    # ----- Standing free tiers: no card, no expiry (preferred defaults) -----
     Provider(
-        name="gemini",
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
-        api_key_env="GEMINI_API_KEY",
-        speed=70,
-        docs="https://aistudio.google.com/apikey",
+        name="groq",
+        base_url="https://api.groq.com/openai/v1",
+        api_key_env="GROQ_API_KEY",
+        speed=95,  # very fast (~300+ tok/s)
+        docs="https://console.groq.com/keys",
+        free_note="Permanent free, no card. ~14,400 req/day, 30k tok/min per model.",
         models=[
-            Model("gemini-2.5-pro", 100, "Gemini 2.5 Pro"),
-            Model("gemini-2.5-flash", 85, "Gemini 2.5 Flash"),
-            Model("gemini-2.5-flash-lite", 60, "Gemini 2.5 Flash-Lite"),
+            Model("openai/gpt-oss-120b", 88, "GPT-OSS 120B (Groq)"),
+            Model("llama-3.3-70b-versatile", 85, "Llama 3.3 70B (Groq)"),
+            Model("llama-3.1-8b-instant", 60, "Llama 3.1 8B (Groq)"),
         ],
     ),
     Provider(
@@ -97,57 +103,11 @@ PROVIDERS: list[Provider] = [
         api_key_env="CEREBRAS_API_KEY",
         speed=100,  # fastest inference available on a free tier (~2000 tok/s)
         docs="https://cloud.cerebras.ai",
+        free_note="Permanent free, no card. ~1M tokens/day; 8k-token context cap on free tier.",
         models=[
             Model("llama-3.3-70b", 85, "Llama 3.3 70B (Cerebras)"),
             Model("qwen-3-32b", 80, "Qwen 3 32B (Cerebras)"),
             Model("llama-3.1-8b", 60, "Llama 3.1 8B (Cerebras)"),
-        ],
-    ),
-    Provider(
-        name="groq",
-        base_url="https://api.groq.com/openai/v1",
-        api_key_env="GROQ_API_KEY",
-        speed=95,  # very fast (~300+ tok/s)
-        docs="https://console.groq.com/keys",
-        models=[
-            Model("llama-3.3-70b-versatile", 85, "Llama 3.3 70B (Groq)"),
-            Model("openai/gpt-oss-120b", 88, "GPT-OSS 120B (Groq)"),
-            Model("llama-3.1-8b-instant", 60, "Llama 3.1 8B (Groq)"),
-        ],
-    ),
-    Provider(
-        name="sambanova",
-        base_url="https://api.sambanova.ai/v1",
-        api_key_env="SAMBANOVA_API_KEY",
-        speed=85,
-        docs="https://cloud.sambanova.ai/apis",
-        models=[
-            Model("DeepSeek-R1", 95, "DeepSeek R1 (SambaNova)"),
-            Model("Meta-Llama-3.3-70B-Instruct", 85, "Llama 3.3 70B (SambaNova)"),
-            Model("Meta-Llama-3.1-8B-Instruct", 60, "Llama 3.1 8B (SambaNova)"),
-        ],
-    ),
-    Provider(
-        name="nvidia",
-        base_url="https://integrate.api.nvidia.com/v1",
-        api_key_env="NVIDIA_API_KEY",
-        speed=60,
-        docs="https://build.nvidia.com",
-        models=[
-            Model("deepseek-ai/deepseek-r1", 95, "DeepSeek R1 (NVIDIA)"),
-            Model("meta/llama-3.3-70b-instruct", 85, "Llama 3.3 70B (NVIDIA)"),
-            Model("meta/llama-3.1-8b-instruct", 60, "Llama 3.1 8B (NVIDIA)"),
-        ],
-    ),
-    Provider(
-        name="mistral",
-        base_url="https://api.mistral.ai/v1",
-        api_key_env="MISTRAL_API_KEY",
-        speed=65,
-        docs="https://console.mistral.ai/api-keys",
-        models=[
-            Model("mistral-large-latest", 85, "Mistral Large"),
-            Model("mistral-small-latest", 60, "Mistral Small"),
         ],
     ),
     Provider(
@@ -156,6 +116,7 @@ PROVIDERS: list[Provider] = [
         api_key_env="OPENROUTER_API_KEY",
         speed=55,
         docs="https://openrouter.ai/keys",
+        free_note="`:free` models, no card. ~50 req/day (rises to 1,000/day after a one-time $10 top-up).",
         models=[
             # ``:free`` variants are permanently free on OpenRouter.
             Model("deepseek/deepseek-r1:free", 95, "DeepSeek R1 (OpenRouter)"),
@@ -169,21 +130,11 @@ PROVIDERS: list[Provider] = [
         api_key_env="GITHUB_MODELS_TOKEN",
         speed=55,
         docs="https://github.com/marketplace/models",
+        free_note="Free for any GitHub account (PAT with models:read). Per-minute/day caps.",
         models=[
             Model("openai/gpt-4.1", 90, "GPT-4.1 (GitHub Models)"),
             Model("meta/Llama-3.3-70B-Instruct", 85, "Llama 3.3 70B (GitHub Models)"),
             Model("openai/gpt-4.1-mini", 70, "GPT-4.1 mini (GitHub Models)"),
-        ],
-    ),
-    Provider(
-        name="cohere",
-        base_url="https://api.cohere.ai/compatibility/v1",
-        api_key_env="COHERE_API_KEY",
-        speed=55,
-        docs="https://dashboard.cohere.com/api-keys",
-        models=[
-            Model("command-a-03-2025", 80, "Command A (Cohere)"),
-            Model("command-r-plus", 70, "Command R+ (Cohere)"),
         ],
     ),
     Provider(
@@ -193,9 +144,80 @@ PROVIDERS: list[Provider] = [
         requires_env=("CLOUDFLARE_ACCOUNT_ID",),
         speed=60,
         docs="https://dash.cloudflare.com/?to=/:account/ai/workers-ai",
+        free_note="Permanent free, no card. ~10k neurons/day. Needs account id too.",
         models=[
             Model("@cf/meta/llama-3.3-70b-instruct-fp8-fast", 85, "Llama 3.3 70B (Cloudflare)"),
             Model("@cf/meta/llama-3.1-8b-instruct", 60, "Llama 3.1 8B (Cloudflare)"),
+        ],
+    ),
+    Provider(
+        name="sambanova",
+        base_url="https://api.sambanova.ai/v1",
+        api_key_env="SAMBANOVA_API_KEY",
+        speed=85,
+        docs="https://cloud.sambanova.ai/apis",
+        free_note="Permanent free tier (~20 RPM, 200k tok/day), no card. Plus $5 expiring bonus credits.",
+        models=[
+            Model("DeepSeek-R1", 95, "DeepSeek R1 (SambaNova)"),
+            Model("Meta-Llama-3.3-70B-Instruct", 85, "Llama 3.3 70B (SambaNova)"),
+            Model("Meta-Llama-3.1-8B-Instruct", 60, "Llama 3.1 8B (SambaNova)"),
+        ],
+    ),
+    Provider(
+        name="mistral",
+        base_url="https://api.mistral.ai/v1",
+        api_key_env="MISTRAL_API_KEY",
+        speed=65,
+        docs="https://console.mistral.ai/api-keys",
+        free_note="Permanent free 'Experiment' tier (~1B tok/mo), no card — but requires opting into data training.",
+        models=[
+            Model("mistral-large-latest", 85, "Mistral Large"),
+            Model("mistral-small-latest", 60, "Mistral Small"),
+        ],
+    ),
+    # ----- NOT a standing free tier: trial credits / prepaid / restricted ----
+    # These are kept so you can still use them if you have credits/entitlement,
+    # but they are deprioritized and clearly flagged in /providers and the docs.
+    Provider(
+        name="gemini",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key_env="GEMINI_API_KEY",
+        speed=70,
+        docs="https://aistudio.google.com/apikey",
+        permanent_free=False,
+        free_note="New AI Studio accounts now require PREPAID billing (since Mar 2026); "
+        "Pro went paid in Apr 2026. Only existing accounts still get Flash free.",
+        models=[
+            # gemini-2.5-pro removed: it is no longer on the free tier.
+            Model("gemini-2.5-flash", 85, "Gemini 2.5 Flash"),
+            Model("gemini-2.5-flash-lite", 60, "Gemini 2.5 Flash-Lite"),
+        ],
+    ),
+    Provider(
+        name="nvidia",
+        base_url="https://integrate.api.nvidia.com/v1",
+        api_key_env="NVIDIA_API_KEY",
+        speed=60,
+        docs="https://build.nvidia.com",
+        permanent_free=False,
+        free_note="Trial credits that EXPIRE (~30 days / 5,000 credits), not a standing free tier.",
+        models=[
+            Model("deepseek-ai/deepseek-r1", 95, "DeepSeek R1 (NVIDIA)"),
+            Model("meta/llama-3.3-70b-instruct", 85, "Llama 3.3 70B (NVIDIA)"),
+            Model("meta/llama-3.1-8b-instruct", 60, "Llama 3.1 8B (NVIDIA)"),
+        ],
+    ),
+    Provider(
+        name="cohere",
+        base_url="https://api.cohere.ai/compatibility/v1",
+        api_key_env="COHERE_API_KEY",
+        speed=55,
+        docs="https://dashboard.cohere.com/api-keys",
+        permanent_free=False,
+        free_note="Trial key: 1,000 calls/month (resets), no card — but NOT allowed for production/commercial use.",
+        models=[
+            Model("command-a-03-2025", 80, "Command A (Cohere)"),
+            Model("command-r-plus", 70, "Command R+ (Cohere)"),
         ],
     ),
 ]
@@ -215,10 +237,15 @@ class Route:
     def id(self) -> str:
         return f"{self.provider.name}/{self.model.id}"
 
-    # Sort key: best quality first, then fastest hardware, for a stable order.
+    # Sort key: best quality first, then prefer truly-free providers over
+    # trial/prepaid ones, then fastest hardware. Stable, deterministic order.
     @property
-    def sort_key(self) -> tuple[int, int]:
-        return (-self.model.quality, -self.provider.speed)
+    def sort_key(self) -> tuple[int, int, int]:
+        return (
+            -self.model.quality,
+            0 if self.provider.permanent_free else 1,
+            -self.provider.speed,
+        )
 
 
 def all_routes() -> list[Route]:
