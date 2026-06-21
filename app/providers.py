@@ -105,9 +105,10 @@ PROVIDERS: list[Provider] = [
         docs="https://cloud.cerebras.ai",
         free_note="Permanent free, no card. ~1M tokens/day; 8k-token context cap on free tier.",
         models=[
-            Model("llama-3.3-70b", 85, "Llama 3.3 70B (Cerebras)"),
-            Model("qwen-3-32b", 80, "Qwen 3 32B (Cerebras)"),
-            Model("llama-3.1-8b", 60, "Llama 3.1 8B (Cerebras)"),
+            # Cerebras retired its Llama free models in 2026; these are what the
+            # free tier actually serves now (see GET /v1/models).
+            Model("gpt-oss-120b", 88, "GPT-OSS 120B (Cerebras)"),
+            Model("zai-glm-4.7", 85, "GLM 4.7 (Cerebras)"),
         ],
     ),
     Provider(
@@ -118,10 +119,12 @@ PROVIDERS: list[Provider] = [
         docs="https://openrouter.ai/keys",
         free_note="`:free` models, no card. ~50 req/day (rises to 1,000/day after a one-time $10 top-up).",
         models=[
-            # ``:free`` variants are permanently free on OpenRouter.
-            Model("deepseek/deepseek-r1:free", 95, "DeepSeek R1 (OpenRouter)"),
+            # ``:free`` variants are permanently free on OpenRouter. DeepSeek R1
+            # and Mistral Small ``:free`` were discontinued in 2026; these are
+            # current free ids (the free pool is often upstream-rate-limited).
+            Model("nousresearch/hermes-3-llama-3.1-405b:free", 88, "Hermes 3 405B (OpenRouter)"),
             Model("meta-llama/llama-3.3-70b-instruct:free", 85, "Llama 3.3 70B (OpenRouter)"),
-            Model("mistralai/mistral-small-3.2-24b-instruct:free", 60, "Mistral Small (OpenRouter)"),
+            Model("qwen/qwen3-next-80b-a3b-instruct:free", 80, "Qwen3 Next 80B (OpenRouter)"),
         ],
     ),
     Provider(
@@ -133,7 +136,8 @@ PROVIDERS: list[Provider] = [
         free_note="Free for any GitHub account (PAT with models:read). Per-minute/day caps.",
         models=[
             Model("openai/gpt-4.1", 90, "GPT-4.1 (GitHub Models)"),
-            Model("meta/Llama-3.3-70B-Instruct", 85, "Llama 3.3 70B (GitHub Models)"),
+            # Catalog id is lowercase; the mixed-case form 404s.
+            Model("meta/llama-3.3-70b-instruct", 85, "Llama 3.3 70B (GitHub Models)"),
             Model("openai/gpt-4.1-mini", 70, "GPT-4.1 mini (GitHub Models)"),
         ],
     ),
@@ -147,7 +151,8 @@ PROVIDERS: list[Provider] = [
         free_note="Permanent free, no card. ~10k neurons/day. Needs account id too.",
         models=[
             Model("@cf/meta/llama-3.3-70b-instruct-fp8-fast", 85, "Llama 3.3 70B (Cloudflare)"),
-            Model("@cf/meta/llama-3.1-8b-instruct", 60, "Llama 3.1 8B (Cloudflare)"),
+            # @cf/meta/llama-3.1-8b-instruct was retired (HTTP 410); fp8 is current.
+            Model("@cf/meta/llama-3.1-8b-instruct-fp8", 60, "Llama 3.1 8B (Cloudflare)"),
         ],
     ),
     Provider(
